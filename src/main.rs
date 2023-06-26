@@ -3,28 +3,31 @@ mod io;
 use crossterm::{
     terminal::{self, disable_raw_mode, enable_raw_mode, Clear}, execute, cursor::SetCursorStyle,
 };
-use io::draw_tildes;
 use std::io::Write;
 
-pub const EMP: char = '\0';
+pub const TABLENGTH: usize = 4;
 
 #[derive(Debug)]
 pub struct TextBuf {
-    pub row_bufs: Vec<Vec<char>>,
+    pub row_buffer: Vec<Vec<char>>,
     pub cursor: (usize, usize),
     pub dimensions: (u16, u16),
+    pub viewport_v_offset: usize, // offset to (start row, end row) of viewport 
+    pub viewport_h_offset: usize, 
 }
 
 impl TextBuf {
     fn new() -> Self {
         let dimensions = terminal::size().unwrap(); // (columns, rows)
 
-        let vec = draw_tildes(dimensions);
+        let vec: Vec<Vec<char>> = Vec::new();
 
         TextBuf {
-            row_bufs: vec,
+            row_buffer: vec,
             cursor: (0, 0),
             dimensions: dimensions,
+            viewport_v_offset: 0,
+            viewport_h_offset: 0,
         }
     }
 }
@@ -38,10 +41,14 @@ fn main() {
 
     // initialize textbuf
     let mut textbuf = TextBuf::new();
+    execute!(stdout, crossterm::cursor::MoveTo(0, 0)).unwrap();
     stdout.flush().unwrap();
 
     // main loop
     loop {
+        // draw textbuf
+        io::render_textbuf(&mut textbuf, &mut stdout);
+
         // wait for keypress
         let key = io::get_key();
         if key == crossterm::event::KeyCode::Esc {
@@ -50,8 +57,6 @@ fn main() {
 
         // process keypress
         io::process_key_code(key, &mut textbuf);
-        // draw textbuf
-        io::render_textbuf(&textbuf, &mut stdout);
     }
 
     // terminal cleanup
