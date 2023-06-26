@@ -1,36 +1,16 @@
 mod io;
+mod textbuf;
 
 use crossterm::{
-    terminal::{self, disable_raw_mode, enable_raw_mode, Clear}, execute, cursor::SetCursorStyle,
+    cursor::SetCursorStyle,
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, Clear},
 };
 use std::io::Write;
 
+use crate::{io::{save_prompt, get_key}, textbuf::TextBuf};
+
 pub const TABLENGTH: usize = 4;
-
-#[derive(Debug)]
-pub struct TextBuf {
-    pub row_buffer: Vec<Vec<char>>,
-    pub cursor: (usize, usize),
-    pub dimensions: (u16, u16),
-    pub viewport_v_offset: usize, // offset to (start row, end row) of viewport 
-    pub viewport_h_offset: usize, 
-}
-
-impl TextBuf {
-    fn new() -> Self {
-        let dimensions = terminal::size().unwrap(); // (columns, rows)
-
-        let vec: Vec<Vec<char>> = Vec::new();
-
-        TextBuf {
-            row_buffer: vec,
-            cursor: (0, 0),
-            dimensions: dimensions,
-            viewport_v_offset: 0,
-            viewport_h_offset: 0,
-        }
-    }
-}
 
 fn main() {
     // terminal setup
@@ -59,6 +39,8 @@ fn main() {
         io::process_key_code(key, &mut textbuf);
     }
 
+    save_prompt(&mut textbuf, &mut stdout);
+
     // terminal cleanup
     disable_raw_mode().unwrap();
 
@@ -68,6 +50,6 @@ fn main() {
         crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
     )
     .unwrap();
-execute!(stdout, SetCursorStyle::DefaultUserShape).unwrap();
+    execute!(stdout, SetCursorStyle::DefaultUserShape).unwrap();
     print!("{:#?}", textbuf);
 }

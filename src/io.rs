@@ -1,17 +1,17 @@
-use crossterm::{self, event::KeyCode, queue, cursor};
-use std::{io::Write, cmp::min};
+use crossterm::{self, cursor, event::KeyCode, queue, style::Stylize};
+use std::{
+    cmp::min,
+    io::{ErrorKind, Stdout, Write},
+};
 
 use crate::{TextBuf, TABLENGTH};
 
 pub fn get_key() -> KeyCode {
     loop {
-        match crossterm::event::read().unwrap() {
-            crossterm::event::Event::Key(event) => {
-                if event.kind == crossterm::event::KeyEventKind::Press {
-                    return event.code;
-                }
+        if let crossterm::event::Event::Key(event) = crossterm::event::read().unwrap() {
+            if event.kind == crossterm::event::KeyEventKind::Press {
+                return event.code;
             }
-            _ => {}
         }
     }
 }
@@ -122,20 +122,30 @@ fn viewport_bounding(textbuf: &mut TextBuf) {
     }
 }
 
-pub fn render_textbuf(textbuf: &mut TextBuf, stdout: &mut std::io::Stdout) {
+pub fn render_textbuf(textbuf: &mut TextBuf, stdout: &mut Stdout) {
     queue!(stdout, cursor::Hide).unwrap();
     queue!(stdout, crossterm::cursor::MoveTo(0, 0)).unwrap();
 
     viewport_bounding(textbuf);
 
     let vstart = textbuf.viewport_v_offset;
-    let vend = min(textbuf.row_buffer.len(), textbuf.viewport_v_offset + textbuf.dimensions.1 as usize);
+    let vend = min(
+        textbuf.row_buffer.len(),
+        textbuf.viewport_v_offset + textbuf.dimensions.1 as usize,
+    );
 
     for (idx, row) in textbuf.row_buffer[vstart..vend].iter().enumerate() {
-        queue!(stdout, crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine)).unwrap();
+        queue!(
+            stdout,
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine)
+        )
+        .unwrap();
 
         let hstart = textbuf.viewport_h_offset;
-        let hend = min(row.len(), textbuf.viewport_h_offset + textbuf.dimensions.0 as usize);
+        let hend = min(
+            row.len(),
+            textbuf.viewport_h_offset + textbuf.dimensions.0 as usize,
+        );
 
         if hend > hstart {
             for c in &row[hstart..hend] {
@@ -143,19 +153,99 @@ pub fn render_textbuf(textbuf: &mut TextBuf, stdout: &mut std::io::Stdout) {
             }
         }
 
-        queue!(stdout, crossterm::cursor::MoveTo(0, idx as u16+1)).unwrap();
+        queue!(stdout, crossterm::cursor::MoveTo(0, idx as u16 + 1)).unwrap();
     }
 
     // draw tildes
-    let empty_line_char = if textbuf.viewport_h_offset == 0 { '~' } else { ' ' };
+    let empty_line_char = if textbuf.viewport_h_offset == 0 {
+        '~'
+    } else {
+        ' '
+    };
     for idx in vend..=textbuf.dimensions.1 as usize {
-        queue!(stdout, crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine)).unwrap();
+        queue!(
+            stdout,
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine)
+        )
+        .unwrap();
         print!("{empty_line_char}");
-        queue!(stdout, crossterm::cursor::MoveTo(0, idx as u16+1)).unwrap();
+        queue!(stdout, crossterm::cursor::MoveTo(0, idx as u16 + 1)).unwrap();
     }
 
-    queue!(stdout, crossterm::cursor::MoveTo((textbuf.cursor.0 - textbuf.viewport_h_offset) as u16, (textbuf.cursor.1 - textbuf.viewport_v_offset) as u16)).unwrap();
+    queue!(
+        stdout,
+        crossterm::cursor::MoveTo(
+            (textbuf.cursor.0 - textbuf.viewport_h_offset) as u16,
+            (textbuf.cursor.1 - textbuf.viewport_v_offset) as u16
+        )
+    )
+    .unwrap();
     queue!(stdout, cursor::Show).unwrap();
 
     stdout.flush().unwrap();
+}
+
+pub fn popup(message: &str, stdout: &mut Stdout) {
+    let (_, _) = crossterm::terminal::size().unwrap();
+
+    // Move to top left corner and print message
+    queue!(stdout, cursor::MoveTo(0, 0)).unwrap();
+    queue!(
+        stdout,
+        crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine)
+    )
+    .unwrap();
+    print!("{}", message.negative());
+
+    stdout.flush().unwrap();
+}
+
+pub fn save_prompt(textbuf: &mut TextBuf, stdout: &mut Stdout) {
+    popup("Save file? (y/n)", stdout);
+
+    'top: loop {
+        let key = get_key();
+        match key {
+            KeyCode::Char('y') => match textbuf.save() {
+                Ok(_) => {
+                    popup("File saved!", stdout);
+                    break;
+                }
+                Err(e) => {
+                    if e.kind() == ErrorKind::NotFound {
+                        let mut filename = String::new();
+                        loop {
+                            popup(format!("Enter filename: {filename}").as_str(), stdout);
+                            let key = get_key();
+                            match key {
+                                KeyCode::Char(c) => filename.push(c),
+                                KeyCode::Backspace => { filename.pop(); }
+                                KeyCode::Enter => break,
+                                KeyCode::Esc => break 'top,
+                                _ => continue,
+                            };
+                        }
+                        textbuf.filename = Some(filename.clone());
+                        match textbuf.save() {
+                            Ok(_) => {
+                                popup("File saved!", stdout);
+                                break;
+                            }
+                            Err(_) => {
+                                popup((format!("Error with filename: {filename} ({e})!")).as_str(), stdout);
+                                break;
+                            }
+                        }
+                    } else {
+                        popup("Error saving file!", stdout);
+                        break;
+                    }
+                }
+            },
+            KeyCode::Char('n') => {
+                break;
+            }
+            _ => {}
+        }
+    }
 }
