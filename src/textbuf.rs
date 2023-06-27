@@ -54,7 +54,7 @@ impl TextBuf {
     }
 
     pub fn load(filename: &str) -> Result<Self, std::io::Error> {
-        let mut file = OpenOptions::new().write(true).create(true).open(filename)?;
+        let mut file = OpenOptions::new().write(false).create(false).read(true).open(filename)?;
 
         let mut textbuf = TextBuf::new();
 
