@@ -8,3 +8,9 @@ edition = "2021"
 [dependencies]
 clap = { version = ">=4.3.8", features = ["derive"] }
 crossterm = "0.26.1"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+debug = 1

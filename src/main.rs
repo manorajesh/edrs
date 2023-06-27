@@ -69,5 +69,5 @@ fn main() {
     )
     .unwrap();
     execute!(stdout, SetCursorStyle::DefaultUserShape).unwrap();
-    print!("{:#?}", textbuf);
+    // print!("{:#?}", textbuf);
 }

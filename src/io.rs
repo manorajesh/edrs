@@ -106,8 +106,8 @@ pub fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
         }
 
         KeyStroke(KeyCode::PageUp, _) => {
-            if textbuf.cursor.1 > textbuf.cursor.1 + textbuf.dimensions.1 as usize {
-                textbuf.cursor.1 -= textbuf.dimensions.1 as usize;
+            if textbuf.cursor.1 > textbuf.dimensions.1 as usize {
+                textbuf.cursor.1 -= textbuf.dimensions.1 as usize-1;
             } else {
                 textbuf.cursor.1 = 0;
             }
@@ -115,7 +115,7 @@ pub fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
 
         KeyStroke(KeyCode::PageDown, _) => {
             if (textbuf.cursor.1 + textbuf.dimensions.1 as usize) < textbuf.row_buffer.len() {
-                textbuf.cursor.1 += textbuf.dimensions.1 as usize;
+                textbuf.cursor.1 += textbuf.dimensions.1 as usize-1;
             } else {
                 textbuf.cursor.1 = textbuf.row_buffer.len() - 1;
             }
