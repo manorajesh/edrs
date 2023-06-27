@@ -7,11 +7,12 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, Clear, EnterAlternateScreen},
 };
-use std::io::Write;
+use io::{process_event, get_event, InputEvent};
+use std::{io::Write};
 use clap::Parser;
 
 use crate::{
-    io::{get_key, process_key_code, render_textbuf, save_prompt, popup},
+    io::{get_key, render_textbuf, save_prompt, popup},
     textbuf::TextBuf,
 };
 
@@ -24,6 +25,7 @@ fn main() {
     // terminal setup
     enable_raw_mode().unwrap();
     let mut stdout = std::io::stdout();
+    execute!(stdout, crossterm::event::EnableMouseCapture).unwrap();
     execute!(stdout, Clear(crossterm::terminal::ClearType::All)).unwrap();
     execute!(stdout, SetCursorStyle::BlinkingBlock).unwrap();
     execute!(stdout, EnterAlternateScreen).unwrap();
@@ -47,16 +49,16 @@ fn main() {
         render_textbuf(&mut textbuf, &mut stdout);
 
         // wait for keypress
-        let key = get_key();
-        if key.0 == crossterm::event::KeyCode::Esc {
-            match   save_prompt(&mut textbuf, &mut stdout) {
+        let key = get_event();
+        if key == InputEvent::KeyStroke(crossterm::event::KeyCode::Esc, crossterm::event::KeyModifiers::NONE) {
+            match save_prompt(&mut textbuf, &mut stdout) {
                 Ok(_) => break,
                 Err(_) => continue,
             }
         }
 
         // process keypress
-        process_key_code(key, &mut textbuf);
+        process_event(key, &mut textbuf);
     }
 
     // terminal cleanup

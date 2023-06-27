@@ -1,4 +1,4 @@
-use crossterm::{self, cursor, event::{KeyCode, KeyModifiers}, queue, style::Stylize};
+use crossterm::{self, cursor, event::{KeyCode, KeyModifiers, MouseEvent, MouseEventKind}, queue, style::Stylize};
 use std::{
     cmp::min,
     io::{ErrorKind, Stdout, Write},
@@ -7,6 +7,14 @@ use std::{
 use crate::{TextBuf, TABLENGTH};
 
 pub struct KeyStroke(pub KeyCode, KeyModifiers);
+
+#[derive(PartialEq)]
+pub enum InputEvent {
+    KeyStroke(KeyCode, KeyModifiers),
+    Mouse(MouseEvent),
+    Resize(u16, u16),
+}
+
 
 pub fn get_key() -> KeyStroke {
     loop {
@@ -18,7 +26,83 @@ pub fn get_key() -> KeyStroke {
     }
 }
 
-pub fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
+pub fn get_event() -> InputEvent {
+    loop {
+        match crossterm::event::read().unwrap() {
+            crossterm::event::Event::Key(event) => {
+                if event.kind == crossterm::event::KeyEventKind::Press {
+                    return InputEvent::KeyStroke(event.code, event.modifiers);
+                }
+            },
+            crossterm::event::Event::Mouse(event) => {
+                return InputEvent::Mouse(event);
+            },
+            crossterm::event::Event::Resize(width, height) => {
+                return InputEvent::Resize(width, height);
+            }
+            _ => {}
+        }
+    }
+}
+
+pub fn process_event(event: InputEvent, textbuf: &mut TextBuf) {
+    match event {
+        InputEvent::KeyStroke(key, modifiers) => {
+            process_key_code(KeyStroke(key, modifiers), textbuf);
+        },
+        InputEvent::Mouse(mouse_event) => {
+            process_mouse_code(mouse_event, textbuf);
+        },
+        InputEvent::Resize(width, height) => {
+            textbuf.dimensions = (width, height);
+        },
+    }
+}
+
+fn process_mouse_code(event: MouseEvent, textbuf: &mut TextBuf) {
+    match event.kind {
+        MouseEventKind::ScrollDown => {
+            if textbuf.row_buffer.len() > textbuf.dimensions.1 as usize && textbuf.viewport_v_offset < textbuf.row_buffer.len() - textbuf.dimensions.1 as usize {
+                textbuf.viewport_v_offset += 1;
+            }
+
+            if textbuf.cursor.1 <= textbuf.viewport_v_offset {
+                textbuf.cursor.1 = textbuf.viewport_v_offset;
+            }
+        },
+
+        MouseEventKind::ScrollUp => {
+            if textbuf.viewport_v_offset > 0 {
+                textbuf.viewport_v_offset -= 1;
+            }
+
+            if textbuf.cursor.1 >= textbuf.viewport_v_offset {
+                textbuf.cursor.1 = textbuf.viewport_v_offset + textbuf.dimensions.1 as usize - 1;
+            }
+        },
+
+        MouseEventKind::Down(_) => {
+            let mut x = event.column as usize + textbuf.viewport_h_offset;
+            let mut y = event.row as usize + textbuf.viewport_v_offset;
+
+            if textbuf.row_buffer.len() > 0 {
+                if y > textbuf.row_buffer.len()-1 {
+                    y = textbuf.row_buffer.len()-1;
+                }
+    
+                if x > textbuf.row_buffer[y].len() {
+                    x = textbuf.row_buffer[y].len();
+                }
+    
+                textbuf.cursor = (x, y);
+            }
+        },
+
+        _ => {}
+    }
+}
+
+fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
     match key {
         KeyStroke(KeyCode::Char(c), KeyModifiers::NONE) => {
             if textbuf.cursor.1 >= textbuf.row_buffer.len() {
@@ -126,12 +210,13 @@ pub fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
                 's' => {
                     match textbuf.save() {
                         Ok(_) => {}
-                        Err(e) => {
-                            popup(
-                                (format!("Error: ({e})!")).as_str(),
-                                &mut std::io::stdout(),
-                            );
-                            get_key();
+                        Err(_) => {
+                            match save_prompt(textbuf, &mut std::io::stdout()) {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    popup(&format!("Error: {}", e), &mut std::io::stdout());
+                                }
+                            }
                         }
                     }
                 }
@@ -196,20 +281,17 @@ pub fn render_textbuf(textbuf: &mut TextBuf, stdout: &mut Stdout) {
     }
 
     // draw tildes
-    let empty_line_char = if textbuf.viewport_h_offset == 0 {
-        '~'
-    } else {
-        ' '
-    };
-    for idx in vend..=textbuf.dimensions.1 as usize {
-        queue!(
-            stdout,
-            crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine)
-        )
-        .unwrap();
-        print!("{empty_line_char}");
-        queue!(stdout, crossterm::cursor::MoveTo(0, idx as u16)).unwrap();
-    }
+    if textbuf.viewport_h_offset == 0 {
+        for idx in vend..=textbuf.dimensions.1 as usize {
+            queue!(
+                stdout,
+                crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine)
+            )
+            .unwrap();
+            print!("~");
+            queue!(stdout, crossterm::cursor::MoveTo(0, idx as u16)).unwrap();
+        }
+    } 
 
     queue!(
         stdout,
@@ -220,7 +302,6 @@ pub fn render_textbuf(textbuf: &mut TextBuf, stdout: &mut Stdout) {
     )
     .unwrap();
     queue!(stdout, cursor::Show).unwrap();
-
     stdout.flush().unwrap();
 }
 
