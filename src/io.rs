@@ -51,6 +51,13 @@ pub fn get_event() -> InputEvent {
     }
 }
 
+pub fn nonblocking_get_event() -> Option<InputEvent> {
+    match crossterm::event::poll(std::time::Duration::from_millis(0)).unwrap() {
+        true => Some(get_event()),
+        false => None,
+    }
+}
+
 pub fn process_event(event: InputEvent, textbuf: &mut TextBuf) {
     match event {
         InputEvent::KeyStroke(key, modifiers) => {
@@ -140,7 +147,13 @@ fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
                 textbuf.cursor.0 -= 1;
                 textbuf.row_buffer[textbuf.cursor.1].remove(textbuf.cursor.0);
             } else if textbuf.cursor.1 > 0 {
-                textbuf.row_buffer.remove(textbuf.cursor.1);
+                if textbuf.row_buffer[textbuf.cursor.1].is_empty() {
+                    textbuf.row_buffer.remove(textbuf.cursor.1);
+                } else {
+                    textbuf.cursor.0 = textbuf.row_buffer[textbuf.cursor.1-1].len();
+                    let row = textbuf.row_buffer.remove(textbuf.cursor.1).into_iter();
+                    textbuf.row_buffer[textbuf.cursor.1-1].extend(row);
+                }
                 textbuf.cursor.1 -= 1;
                 textbuf.cursor.0 = textbuf.row_buffer[textbuf.cursor.1].len();
             }
@@ -244,6 +257,28 @@ fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
                 textbuf.cursor.1 = textbuf.row_buffer.len() - 1;
             }
 
+            textbuf.dirty = true;
+        }
+
+        KeyStroke(KeyCode::End, _) => {
+            textbuf.cursor.0 = textbuf.row_buffer[textbuf.cursor.1].len();
+            textbuf.dirty = true;
+        }
+
+        KeyStroke(KeyCode::Home, _) => {
+            textbuf.cursor.0 = 0;
+            textbuf.dirty = true;
+        }
+
+        KeyStroke(KeyCode::Delete, _) => {
+            if textbuf.cursor.0 < textbuf.row_buffer[textbuf.cursor.1].len() {
+                textbuf.row_buffer[textbuf.cursor.1].remove(textbuf.cursor.0);
+            } else if textbuf.cursor.1 < textbuf.row_buffer.len() - 1 {
+                let row = textbuf.row_buffer.remove(textbuf.cursor.1 + 1).into_iter();
+                textbuf.row_buffer[textbuf.cursor.1].extend(row);
+            }
+
+            textbuf.save_changed = true;
             textbuf.dirty = true;
         }
 

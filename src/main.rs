@@ -10,13 +10,13 @@ use crossterm::{
         disable_raw_mode, enable_raw_mode, Clear, EnterAlternateScreen, LeaveAlternateScreen,
     },
 };
-use io::{get_event, process_event, InputEvent};
-use std::io::Write;
+use io::{process_event, InputEvent, nonblocking_get_event};
+use std::{io::Write, sync::{Arc, Mutex}, time::Duration};
 
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
-    io::{get_key, popup, render_textbuf, save_prompt},
+    io::{popup, render_textbuf, save_prompt},
     textbuf::TextBuf,
 };
 
@@ -59,42 +59,51 @@ fn main() {
     let syn_highlighter = SynHighlighter::from(args.theme, args.syntax);
 
     // initialize textbuf
-    let mut textbuf = if let Some(file) = args.file {
-        TextBuf::load(&file).unwrap_or_else(|e| {
-            popup(format!("Error loading file: {}", e).as_str(), &mut stdout);
-            get_key();
-            TextBuf::new()
-        })
-    } else {
-        TextBuf::new()
-    };
+    let textbuf = Arc::new(Mutex::new(TextBuf::new()));
+    let textbuf_clone = Arc::clone(&textbuf);
+
+    if let Some(file) = args.file {
+        std::thread::spawn(move || {
+            if let Err(e) = TextBuf::async_load(&file, &textbuf_clone) {
+                popup(format!("Error loading file: {}", e).as_str(), &mut std::io::stdout());
+            }
+        });
+    }
     execute!(stdout, crossterm::cursor::MoveTo(0, 0)).unwrap();
     stdout.flush().unwrap();
 
     // main loop
     loop {
         // draw textbuf
-        if textbuf.dirty {
-            render_textbuf(&mut textbuf, &mut stdout, &syn_highlighter);
-            textbuf.dirty = false;
+        let mut textbuf_guard = textbuf.lock().unwrap();
+        if textbuf_guard.dirty {
+            render_textbuf(&mut textbuf_guard, &mut stdout, &syn_highlighter);
+            textbuf_guard.dirty = true;
         }
+        stdout.flush().unwrap();
+        drop(textbuf_guard);
 
         // wait for keypress
-        let key = get_event();
-        if key
-            == InputEvent::KeyStroke(
-                crossterm::event::KeyCode::Esc,
-                crossterm::event::KeyModifiers::NONE,
-            )
-        {
-            match save_prompt(&mut textbuf, &mut stdout) {
-                Ok(_) => break,
-                Err(_) => continue,
+        if let Some(key) = nonblocking_get_event() {
+            if key
+                == InputEvent::KeyStroke(
+                    crossterm::event::KeyCode::Esc,
+                    crossterm::event::KeyModifiers::NONE,
+                )
+            {
+                let mut textbuf_guard = textbuf.lock().unwrap();
+                match save_prompt(&mut textbuf_guard, &mut stdout) {
+                    Ok(_) => break,
+                    Err(_) => continue,
+                }
             }
+
+            // process keypress
+            let mut textbuf_guard = textbuf.lock().unwrap();
+            process_event(key, &mut textbuf_guard);
         }
 
-        // process keypress
-        process_event(key, &mut textbuf);
+        std::thread::sleep(Duration::from_millis(10));
     }
 
     // terminal cleanup
