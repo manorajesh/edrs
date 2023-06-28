@@ -1,10 +1,17 @@
-use crossterm::{self, cursor, event::{KeyCode, KeyModifiers, MouseEvent, MouseEventKind}, queue, style::Stylize};
+use crossterm::{
+    self, cursor,
+    event::{KeyCode, KeyModifiers, MouseEvent, MouseEventKind},
+    queue,
+    style::{Color, Stylize},
+};
 use std::{
     cmp::min,
     io::{ErrorKind, Stdout, Write},
 };
 
-use crate::{TextBuf, TABLENGTH};
+use crate::{SynHighlighter, TextBuf, TABLENGTH};
+
+use syntect::highlighting::Color as SyntectColor;
 
 pub struct KeyStroke(pub KeyCode, KeyModifiers);
 
@@ -14,7 +21,6 @@ pub enum InputEvent {
     Mouse(MouseEvent),
     Resize(u16, u16),
 }
-
 
 pub fn get_key() -> KeyStroke {
     loop {
@@ -33,10 +39,10 @@ pub fn get_event() -> InputEvent {
                 if event.kind == crossterm::event::KeyEventKind::Press {
                     return InputEvent::KeyStroke(event.code, event.modifiers);
                 }
-            },
+            }
             crossterm::event::Event::Mouse(event) => {
                 return InputEvent::Mouse(event);
-            },
+            }
             crossterm::event::Event::Resize(width, height) => {
                 return InputEvent::Resize(width, height);
             }
@@ -49,54 +55,63 @@ pub fn process_event(event: InputEvent, textbuf: &mut TextBuf) {
     match event {
         InputEvent::KeyStroke(key, modifiers) => {
             process_key_code(KeyStroke(key, modifiers), textbuf);
-        },
+        }
         InputEvent::Mouse(mouse_event) => {
             process_mouse_code(mouse_event, textbuf);
-        },
+        }
         InputEvent::Resize(width, height) => {
             textbuf.dimensions = (width, height);
-        },
+        }
     }
 }
 
 fn process_mouse_code(event: MouseEvent, textbuf: &mut TextBuf) {
     match event.kind {
         MouseEventKind::ScrollDown => {
-            if textbuf.row_buffer.len() > textbuf.dimensions.1 as usize && textbuf.viewport_v_offset < textbuf.row_buffer.len() - textbuf.dimensions.1 as usize {
+            if textbuf.row_buffer.len() > textbuf.dimensions.1 as usize
+                && textbuf.viewport_v_offset
+                    < textbuf.row_buffer.len() - textbuf.dimensions.1 as usize
+            {
                 textbuf.viewport_v_offset += 1;
             }
 
             if textbuf.cursor.1 <= textbuf.viewport_v_offset {
                 textbuf.cursor.1 = textbuf.viewport_v_offset;
             }
-        },
+
+            textbuf.dirty = true;
+        }
 
         MouseEventKind::ScrollUp => {
             if textbuf.viewport_v_offset > 0 {
                 textbuf.viewport_v_offset -= 1;
             }
 
-            if textbuf.cursor.1 >= textbuf.viewport_v_offset {
+            if textbuf.cursor.1 >= textbuf.viewport_v_offset + textbuf.dimensions.1 as usize - 1 {
                 textbuf.cursor.1 = textbuf.viewport_v_offset + textbuf.dimensions.1 as usize - 1;
             }
-        },
+
+            textbuf.dirty = true;
+        }
 
         MouseEventKind::Down(_) => {
             let mut x = event.column as usize + textbuf.viewport_h_offset;
             let mut y = event.row as usize + textbuf.viewport_v_offset;
 
-            if textbuf.row_buffer.len() > 0 {
-                if y > textbuf.row_buffer.len()-1 {
-                    y = textbuf.row_buffer.len()-1;
+            if !textbuf.row_buffer.is_empty() {
+                if y > textbuf.row_buffer.len() - 1 {
+                    y = textbuf.row_buffer.len() - 1;
                 }
-    
+
                 if x > textbuf.row_buffer[y].len() {
                     x = textbuf.row_buffer[y].len();
                 }
-    
+
                 textbuf.cursor = (x, y);
             }
-        },
+
+            textbuf.dirty = true;
+        }
 
         _ => {}
     }
@@ -109,9 +124,15 @@ fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
                 textbuf.row_buffer.push(Vec::new());
             }
 
-            textbuf.row_buffer[textbuf.cursor.1].insert(textbuf.cursor.0, c);
+            if textbuf.cursor.0 >= textbuf.row_buffer[textbuf.cursor.1].len() {
+                textbuf.row_buffer[textbuf.cursor.1].push(c);
+            } else {
+                textbuf.row_buffer[textbuf.cursor.1].insert(textbuf.cursor.0, c);
+            }
 
             textbuf.cursor.0 += 1;
+            textbuf.save_changed = true;
+            textbuf.dirty = true;
         }
 
         KeyStroke(KeyCode::Backspace, _) => {
@@ -123,6 +144,9 @@ fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
                 textbuf.cursor.1 -= 1;
                 textbuf.cursor.0 = textbuf.row_buffer[textbuf.cursor.1].len();
             }
+
+            textbuf.save_changed = true;
+            textbuf.dirty = true;
         }
 
         KeyStroke(KeyCode::Up, _) => {
@@ -134,6 +158,8 @@ fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
             } else {
                 textbuf.cursor.0 = 0;
             }
+
+            textbuf.dirty = true;
         }
 
         KeyStroke(KeyCode::Down, _) => {
@@ -145,6 +171,8 @@ fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
             } else {
                 textbuf.cursor.0 = textbuf.row_buffer[textbuf.cursor.1].len();
             }
+
+            textbuf.dirty = true;
         }
 
         KeyStroke(KeyCode::Left, _) => {
@@ -154,6 +182,8 @@ fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
                 textbuf.cursor.1 -= 1;
                 textbuf.cursor.0 = textbuf.row_buffer[textbuf.cursor.1].len();
             }
+
+            textbuf.dirty = true;
         }
 
         KeyStroke(KeyCode::Right, _) => {
@@ -163,6 +193,8 @@ fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
                 textbuf.cursor.1 += 1;
                 textbuf.cursor.0 = 0;
             }
+
+            textbuf.dirty = true;
         }
 
         KeyStroke(KeyCode::Enter, _) => {
@@ -176,6 +208,9 @@ fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
                 textbuf.cursor.0 = 0;
                 textbuf.cursor.1 += 1;
             }
+
+            textbuf.save_changed = true;
+            textbuf.dirty = true;
         }
 
         KeyStroke(KeyCode::Tab, _) => {
@@ -187,45 +222,50 @@ fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
                 textbuf.row_buffer[textbuf.cursor.1].insert(textbuf.cursor.0, ' ');
                 textbuf.cursor.0 += 1;
             }
+
+            textbuf.save_changed = true;
+            textbuf.dirty = true;
         }
 
         KeyStroke(KeyCode::PageUp, _) => {
             if textbuf.cursor.1 > textbuf.dimensions.1 as usize {
-                textbuf.cursor.1 -= textbuf.dimensions.1 as usize-1;
+                textbuf.cursor.1 -= textbuf.dimensions.1 as usize - 1;
             } else {
                 textbuf.cursor.1 = 0;
             }
+
+            textbuf.dirty = true;
         }
 
         KeyStroke(KeyCode::PageDown, _) => {
             if (textbuf.cursor.1 + textbuf.dimensions.1 as usize) < textbuf.row_buffer.len() {
-                textbuf.cursor.1 += textbuf.dimensions.1 as usize-1;
+                textbuf.cursor.1 += textbuf.dimensions.1 as usize - 1;
             } else {
                 textbuf.cursor.1 = textbuf.row_buffer.len() - 1;
             }
+
+            textbuf.dirty = true;
         }
 
-        KeyStroke(KeyCode::Char(c), KeyModifiers::CONTROL) => {
-            match c {
-                's' => {
-                    match textbuf.save() {
+        KeyStroke(KeyCode::Char(c), KeyModifiers::CONTROL) => match c {
+            's' => {
+                match textbuf.save() {
+                    Ok(_) => {}
+                    Err(_) => match save_prompt(textbuf, &mut std::io::stdout()) {
                         Ok(_) => {}
-                        Err(_) => {
-                            match save_prompt(textbuf, &mut std::io::stdout()) {
-                                Ok(_) => {}
-                                Err(e) => {
-                                    popup(&format!("Error: {}", e), &mut std::io::stdout());
-                                }
-                            }
+                        Err(e) => {
+                            popup(&format!("Error: {}", e), &mut std::io::stdout());
                         }
-                    }
+                    },
                 }
-                'q' => {
-                    std::process::exit(0);
-                }
-                _ => {}
+
+                textbuf.dirty = true;
             }
-        }
+            'q' => {
+                std::process::exit(0);
+            }
+            _ => {}
+        },
         _ => {}
     }
 }
@@ -246,7 +286,7 @@ fn viewport_bounding(textbuf: &mut TextBuf) {
     }
 }
 
-pub fn render_textbuf(textbuf: &mut TextBuf, stdout: &mut Stdout) {
+pub fn render_textbuf(textbuf: &mut TextBuf, stdout: &mut Stdout, sh: &SynHighlighter) {
     queue!(stdout, cursor::Hide).unwrap();
     queue!(stdout, crossterm::cursor::MoveTo(0, 0)).unwrap();
 
@@ -255,7 +295,7 @@ pub fn render_textbuf(textbuf: &mut TextBuf, stdout: &mut Stdout) {
     let vstart = textbuf.viewport_v_offset;
     let vend = min(
         textbuf.row_buffer.len(),
-        textbuf.viewport_v_offset + textbuf.dimensions.1 as usize + 1,
+        textbuf.viewport_v_offset + textbuf.dimensions.1 as usize,
     );
 
     for (idx, row) in textbuf.row_buffer[vstart..vend].iter().enumerate() {
@@ -268,12 +308,31 @@ pub fn render_textbuf(textbuf: &mut TextBuf, stdout: &mut Stdout) {
         let hstart = textbuf.viewport_h_offset;
         let hend = min(
             row.len(),
-            textbuf.viewport_h_offset + textbuf.dimensions.0 as usize,
+            textbuf.viewport_h_offset + textbuf.dimensions.0 as usize + 1,
         );
 
         if hend > hstart {
-            for c in &row[hstart..hend] {
-                print!("{}", c);
+            if sh.use_colors {
+                // Parse the line.
+                let line: String = row[hstart..hend].iter().collect();
+                let mut h = syntect::easy::HighlightLines::new(
+                    sh.syntax_set.find_syntax_by_extension("rs").unwrap(),
+                    &sh.theme_set.themes[sh.theme.as_str()],
+                );
+                let ranges: Vec<(syntect::highlighting::Style, &str)> =
+                    h.highlight_line(&line, &sh.syntax_set).unwrap();
+
+                // Print the line with color.
+                for (style, text) in ranges {
+                    let color = syntect_to_crossterm_color(style.foreground);
+                    queue!(stdout, crossterm::style::SetForegroundColor(color)).unwrap();
+                    print!("{}", text);
+                    queue!(stdout, crossterm::style::ResetColor).unwrap();
+                }
+            } else {
+                for c in &row[hstart..hend] {
+                    print!("{}", c);
+                }
             }
         }
 
@@ -281,17 +340,20 @@ pub fn render_textbuf(textbuf: &mut TextBuf, stdout: &mut Stdout) {
     }
 
     // draw tildes
-    if textbuf.viewport_h_offset == 0 {
-        for idx in vend..=textbuf.dimensions.1 as usize {
-            queue!(
-                stdout,
-                crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine)
-            )
-            .unwrap();
-            print!("~");
-            queue!(stdout, crossterm::cursor::MoveTo(0, idx as u16)).unwrap();
-        }
-    } 
+    let empty_line_char = if textbuf.viewport_h_offset == 0 {
+        '~'
+    } else {
+        ' '
+    };
+    for idx in vend..=textbuf.dimensions.1 as usize - 1 {
+        queue!(
+            stdout,
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine)
+        )
+        .unwrap();
+        print!("{empty_line_char}");
+        queue!(stdout, crossterm::cursor::MoveTo(0, idx as u16)).unwrap();
+    }
 
     queue!(
         stdout,
@@ -303,6 +365,14 @@ pub fn render_textbuf(textbuf: &mut TextBuf, stdout: &mut Stdout) {
     .unwrap();
     queue!(stdout, cursor::Show).unwrap();
     stdout.flush().unwrap();
+}
+
+fn syntect_to_crossterm_color(color: SyntectColor) -> Color {
+    Color::Rgb {
+        r: color.r,
+        g: color.g,
+        b: color.b,
+    }
 }
 
 pub fn popup(message: &str, stdout: &mut Stdout) {
@@ -319,6 +389,10 @@ pub fn popup(message: &str, stdout: &mut Stdout) {
 }
 
 pub fn save_prompt(textbuf: &mut TextBuf, stdout: &mut Stdout) -> Result<(), std::io::Error> {
+    if !textbuf.save_changed {
+        return Ok(());
+    }
+
     popup("Save file? (y/n)", stdout);
 
     loop {

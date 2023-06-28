@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 clap = { version = ">=4.3.8", features = ["derive"] }
 crossterm = "0.26.1"
+syntect = "5.0.0"
 
 [profile.release]
 lto = "fat"

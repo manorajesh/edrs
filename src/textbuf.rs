@@ -7,7 +7,7 @@ use crossterm::terminal;
 
 use crate::TABLENGTH;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TextBuf {
     pub row_buffer: Vec<Vec<char>>,
     pub cursor: (usize, usize),
@@ -15,6 +15,8 @@ pub struct TextBuf {
     pub viewport_v_offset: usize, // offset to (start row, end row) of viewport
     pub viewport_h_offset: usize,
     pub filename: Option<String>,
+    pub save_changed: bool,
+    pub dirty: bool,
 }
 
 impl TextBuf {
@@ -30,10 +32,12 @@ impl TextBuf {
             viewport_v_offset: 0,
             viewport_h_offset: 0,
             filename: None,
+            save_changed: false,
+            dirty: true, // force draw at start
         }
     }
 
-    pub fn save(&self) -> Result<(), std::io::Error> {
+    pub fn save(&mut self) -> Result<(), std::io::Error> {
         if let Some(filename) = &self.filename {
             let mut file = OpenOptions::new().write(true).create(true).open(filename)?;
 
@@ -44,6 +48,7 @@ impl TextBuf {
                 file.write_all("\n".as_bytes())?;
             }
 
+            self.save_changed = false;
             Ok(())
         } else {
             Err(std::io::Error::new(
@@ -54,7 +59,11 @@ impl TextBuf {
     }
 
     pub fn load(filename: &str) -> Result<Self, std::io::Error> {
-        let mut file = OpenOptions::new().write(false).create(false).read(true).open(filename)?;
+        let mut file = OpenOptions::new()
+            .write(false)
+            .create(false)
+            .read(true)
+            .open(filename)?;
 
         let mut textbuf = TextBuf::new();
 

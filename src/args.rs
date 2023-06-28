@@ -12,4 +12,12 @@ pub struct Args {
     /// Path to file
     #[clap(value_name = "FILE", value_hint = ValueHint::FilePath)]
     pub file: Option<String>,
+
+    /// Enable syntax highlighting
+    #[clap(short, long)]
+    pub syntax: bool,
+
+    /// Highlighting theme
+    #[clap(short, long, default_value = "base16-eighties.dark")]
+    pub theme: String,
 }
