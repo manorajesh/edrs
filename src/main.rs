@@ -11,7 +11,7 @@ use crossterm::{
     },
 };
 use io::{get_event, process_event, InputEvent};
-use std::io::Write;
+use std::{io::Write, sync::{Arc, Mutex}};
 
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
@@ -59,25 +59,28 @@ fn main() {
     let syn_highlighter = SynHighlighter::from(args.theme, args.syntax);
 
     // initialize textbuf
-    let mut textbuf = if let Some(file) = args.file {
-        TextBuf::load(&file).unwrap_or_else(|e| {
-            popup(format!("Error loading file: {}", e).as_str(), &mut stdout);
-            get_key();
-            TextBuf::new()
-        })
-    } else {
-        TextBuf::new()
-    };
+    let textbuf = Arc::new(Mutex::new(TextBuf::new()));
+    let textbuf_clone = Arc::clone(&textbuf);
+
+    if let Some(file) = args.file {
+        std::thread::spawn(move || {
+            if let Err(e) = TextBuf::async_load(&file, &textbuf_clone) {
+                popup(format!("Error loading file: {}", e).as_str(), &mut std::io::stdout());
+            }
+        });
+    }
     execute!(stdout, crossterm::cursor::MoveTo(0, 0)).unwrap();
     stdout.flush().unwrap();
 
     // main loop
     loop {
         // draw textbuf
-        if textbuf.dirty {
-            render_textbuf(&mut textbuf, &mut stdout, &syn_highlighter);
-            textbuf.dirty = false;
+        let mut textbuf_guard = textbuf.lock().unwrap();
+        if textbuf_guard.dirty {
+            render_textbuf(&mut textbuf_guard, &mut stdout, &syn_highlighter);
+            textbuf_guard.dirty = false;
         }
+        drop(textbuf_guard);
 
         // wait for keypress
         let key = get_event();
@@ -87,14 +90,16 @@ fn main() {
                 crossterm::event::KeyModifiers::NONE,
             )
         {
-            match save_prompt(&mut textbuf, &mut stdout) {
+            let mut textbuf_guard = textbuf.lock().unwrap();
+            match save_prompt(&mut textbuf_guard, &mut stdout) {
                 Ok(_) => break,
                 Err(_) => continue,
             }
         }
 
         // process keypress
-        process_event(key, &mut textbuf);
+        let mut textbuf_guard = textbuf.lock().unwrap();
+        process_event(key, &mut textbuf_guard);
     }
 
     // terminal cleanup
