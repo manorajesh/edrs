@@ -10,13 +10,13 @@ use crossterm::{
         disable_raw_mode, enable_raw_mode, Clear, EnterAlternateScreen, LeaveAlternateScreen,
     },
 };
-use io::{get_event, process_event, InputEvent};
-use std::{io::Write, sync::{Arc, Mutex}};
+use io::{process_event, InputEvent, nonblocking_get_event};
+use std::{io::Write, sync::{Arc, Mutex}, time::Duration};
 
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
-    io::{get_key, popup, render_textbuf, save_prompt},
+    io::{popup, render_textbuf, save_prompt},
     textbuf::TextBuf,
 };
 
@@ -78,28 +78,32 @@ fn main() {
         let mut textbuf_guard = textbuf.lock().unwrap();
         if textbuf_guard.dirty {
             render_textbuf(&mut textbuf_guard, &mut stdout, &syn_highlighter);
-            textbuf_guard.dirty = false;
+            textbuf_guard.dirty = true;
         }
+        stdout.flush().unwrap();
         drop(textbuf_guard);
 
         // wait for keypress
-        let key = get_event();
-        if key
-            == InputEvent::KeyStroke(
-                crossterm::event::KeyCode::Esc,
-                crossterm::event::KeyModifiers::NONE,
-            )
-        {
-            let mut textbuf_guard = textbuf.lock().unwrap();
-            match save_prompt(&mut textbuf_guard, &mut stdout) {
-                Ok(_) => break,
-                Err(_) => continue,
+        if let Some(key) = nonblocking_get_event() {
+            if key
+                == InputEvent::KeyStroke(
+                    crossterm::event::KeyCode::Esc,
+                    crossterm::event::KeyModifiers::NONE,
+                )
+            {
+                let mut textbuf_guard = textbuf.lock().unwrap();
+                match save_prompt(&mut textbuf_guard, &mut stdout) {
+                    Ok(_) => break,
+                    Err(_) => continue,
+                }
             }
+
+            // process keypress
+            let mut textbuf_guard = textbuf.lock().unwrap();
+            process_event(key, &mut textbuf_guard);
         }
 
-        // process keypress
-        let mut textbuf_guard = textbuf.lock().unwrap();
-        process_event(key, &mut textbuf_guard);
+        std::thread::sleep(Duration::from_millis(10));
     }
 
     // terminal cleanup

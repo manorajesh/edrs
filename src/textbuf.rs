@@ -96,7 +96,7 @@ impl TextBuf {
             textbuf.lock().unwrap().row_buffer.push(row);
             textbuf.lock().unwrap().dirty = true;
         }
-
+        
         Ok(())
     }
 }

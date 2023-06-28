@@ -51,6 +51,13 @@ pub fn get_event() -> InputEvent {
     }
 }
 
+pub fn nonblocking_get_event() -> Option<InputEvent> {
+    match crossterm::event::poll(std::time::Duration::from_millis(0)).unwrap() {
+        true => Some(get_event()),
+        false => None,
+    }
+}
+
 pub fn process_event(event: InputEvent, textbuf: &mut TextBuf) {
     match event {
         InputEvent::KeyStroke(key, modifiers) => {
