@@ -270,6 +270,18 @@ fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
             textbuf.dirty = true;
         }
 
+        KeyStroke(KeyCode::Delete, _) => {
+            if textbuf.cursor.0 < textbuf.row_buffer[textbuf.cursor.1].len() {
+                textbuf.row_buffer[textbuf.cursor.1].remove(textbuf.cursor.0);
+            } else if textbuf.cursor.1 < textbuf.row_buffer.len() - 1 {
+                let row = textbuf.row_buffer.remove(textbuf.cursor.1 + 1).into_iter();
+                textbuf.row_buffer[textbuf.cursor.1].extend(row);
+            }
+
+            textbuf.save_changed = true;
+            textbuf.dirty = true;
+        }
+
         KeyStroke(KeyCode::Char(c), KeyModifiers::CONTROL) => match c {
             's' => {
                 match textbuf.save() {
