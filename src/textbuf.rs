@@ -1,6 +1,6 @@
 use std::{
     fs::OpenOptions,
-    io::{Read, Write},
+    io::{Read, Write}, sync::{Arc, Mutex},
 };
 
 use crossterm::terminal;
@@ -79,5 +79,24 @@ impl TextBuf {
         textbuf.filename = Some(filename.to_string());
 
         Ok(textbuf)
+    }
+
+    pub fn async_load(filename: &str, textbuf: &Arc<Mutex<TextBuf>>) -> Result<(), std::io::Error> {
+        let mut file = OpenOptions::new()
+            .write(false)
+            .create(false)
+            .read(true)
+            .open(filename)?;
+
+        let mut buf = String::new();
+        file.read_to_string(&mut buf)?;
+
+        for line in buf.lines() {
+            let row = line.chars().collect();
+            textbuf.lock().unwrap().row_buffer.push(row);
+            textbuf.lock().unwrap().dirty = true;
+        }
+
+        Ok(())
     }
 }
