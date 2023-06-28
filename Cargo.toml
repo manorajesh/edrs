@@ -6,7 +6,7 @@ description = "A non-modal plaintext editor with saving and loading functionalit
 readme = "README.md"
 repository = "https://github.com/manorajesh/edrs"
 license = "MIT"
-keywords = ["text", "editor", "terminal", "cli", "input", "terminal"]
+keywords = ["text", "editor", "terminal", "cli", "input"]
 categories = ["command-line-interface", "command-line-utilities"]
 exclude = [".vscode", "testfiles", ".github", "Cargo.lock", "target"]
 
