@@ -10,8 +10,12 @@ use crossterm::{
         disable_raw_mode, enable_raw_mode, Clear, EnterAlternateScreen, LeaveAlternateScreen,
     },
 };
-use io::{process_event, InputEvent, nonblocking_get_event};
-use std::{io::Write, sync::{Arc, Mutex}, time::Duration};
+use io::{nonblocking_get_event, process_event, InputEvent};
+use std::{
+    io::Write,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
@@ -62,13 +66,19 @@ fn main() {
     let textbuf = Arc::new(Mutex::new(TextBuf::new()));
     let textbuf_clone = Arc::clone(&textbuf);
 
-    if let Some(file) = args.file {
+    let thread_load = if let Some(file) = args.file {
         std::thread::spawn(move || {
             if let Err(e) = TextBuf::async_load(&file, &textbuf_clone) {
-                popup(format!("Error loading file: {}", e).as_str(), &mut std::io::stdout());
+                popup(
+                    format!("Error loading file: {}", e).as_str(),
+                    &mut std::io::stdout(),
+                );
             }
-        });
-    }
+        })
+    } else {
+        std::thread::spawn(move || {})
+    };
+
     execute!(stdout, crossterm::cursor::MoveTo(0, 0)).unwrap();
     stdout.flush().unwrap();
 
@@ -105,6 +115,8 @@ fn main() {
 
         std::thread::sleep(Duration::from_millis(10));
     }
+
+    thread_load.join().unwrap();
 
     // terminal cleanup
     disable_raw_mode().unwrap();

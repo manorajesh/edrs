@@ -1,6 +1,7 @@
 use std::{
     fs::OpenOptions,
-    io::{Read, Write}, sync::{Arc, Mutex},
+    io::{Read, Write},
+    sync::{Arc, Mutex},
 };
 
 use crossterm::terminal;
@@ -96,7 +97,7 @@ impl TextBuf {
             textbuf.lock().unwrap().row_buffer.push(row);
             textbuf.lock().unwrap().dirty = true;
         }
-        
+
         Ok(())
     }
 }

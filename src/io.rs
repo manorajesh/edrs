@@ -150,9 +150,9 @@ fn process_key_code(key: KeyStroke, textbuf: &mut TextBuf) {
                 if textbuf.row_buffer[textbuf.cursor.1].is_empty() {
                     textbuf.row_buffer.remove(textbuf.cursor.1);
                 } else {
-                    textbuf.cursor.0 = textbuf.row_buffer[textbuf.cursor.1-1].len();
+                    textbuf.cursor.0 = textbuf.row_buffer[textbuf.cursor.1 - 1].len();
                     let row = textbuf.row_buffer.remove(textbuf.cursor.1).into_iter();
-                    textbuf.row_buffer[textbuf.cursor.1-1].extend(row);
+                    textbuf.row_buffer[textbuf.cursor.1 - 1].extend(row);
                 }
                 textbuf.cursor.1 -= 1;
                 textbuf.cursor.0 = textbuf.row_buffer[textbuf.cursor.1].len();
